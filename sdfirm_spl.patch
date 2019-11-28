@@ -10,23 +10,79 @@ Index: uboot-h5/common/spl/spl.c
 ===================================================================
 --- uboot-h5.orig/common/spl/spl.c
 +++ uboot-h5/common/spl/spl.c
-@@ -19,6 +19,9 @@
+@@ -19,6 +19,10 @@
  #include <dm/root.h>
  #include <linux/compiler.h>
  #include <fdt_support.h>
 +#include <target/bh.h>
 +#include <target/console.h>
 +#include <target/cmdline.h>
++#include <target/mmc.h>
  
  DECLARE_GLOBAL_DATA_PTR;
  
-@@ -420,6 +423,18 @@ void board_init_r(gd_t *dummy1, ulong du
+@@ -84,20 +88,20 @@ void spl_fixup_fdt(void)
+ 
+ 	err = fdt_check_header(fdt_blob);
+ 	if (err < 0) {
+-		printf("fdt_root: %s\n", fdt_strerror(err));
++		debug("fdt_root: %s\n", fdt_strerror(err));
+ 		return;
+ 	}
+ 
+ 	/* fixup the memory dt node */
+ 	err = fdt_shrink_to_minimum(fdt_blob, 0);
+ 	if (err == 0) {
+-		printf("spl: fdt_shrink_to_minimum err - %d\n", err);
++		debug("spl: fdt_shrink_to_minimum err - %d\n", err);
+ 		return;
+ 	}
+ 
+ 	err = arch_fixup_fdt(fdt_blob);
+ 	if (err) {
+-		printf("spl: arch_fixup_fdt err - %d\n", err);
++		debug("spl: arch_fixup_fdt err - %d\n", err);
+ 		return;
+ 	}
+ #endif
+@@ -348,18 +352,18 @@ static int boot_from_devices(struct spl_
+ 		loader = spl_ll_find_loader(spl_boot_list[i]);
+ #if defined(CONFIG_SPL_SERIAL_SUPPORT) && defined(CONFIG_SPL_LIBCOMMON_SUPPORT)
+ 		if (loader) {
+-			printf("Trying to boot from %s\n", loader->name);
++			debug("Trying to boot from %s\n", loader->name);
+ #if defined(CONFIG_MACH_SUN8I_H3_NANOPI) || defined(CONFIG_MACH_SUN50I_H5_NANOPI)
+-			printf("Boot device: ");
++			debug("Boot device: ");
+ 			switch(spl_boot_list[i]) {
+ 				case BOOT_DEVICE_MMC1:
+-					printf("sd\n");
++					debug("sd\n");
+ 					break;
+ 				case BOOT_DEVICE_MMC2:
+-					printf("emmc\n");
++					debug("emmc\n");
+ 					break;
+ 				default:
+-					printf("untest, may occur error\n");
++					debug("untest, may occur error\n");
+ 					break;
+ #endif
+ 			}
+@@ -420,12 +424,25 @@ void board_init_r(gd_t *dummy1, ulong du
  #endif
  	board_boot_order(spl_boot_list);
  
 +	console_init();
 +	cmd_init();
++	mmcsd_init();
 +
+ 	if (boot_from_devices(&spl_image, spl_boot_list,
+ 			      ARRAY_SIZE(spl_boot_list))) {
+ 		puts("SPL: failed to boot from all boot devices\n");
+ 		hang();
+ 	}
+ 
 +	while (1) {
 +#ifdef CONFIG_IDLE
 +		while (!bh_resumed_any()) {
@@ -36,9 +92,9 @@ Index: uboot-h5/common/spl/spl.c
 +		bh_run_all();
 +	}
 +
- 	if (boot_from_devices(&spl_image, spl_boot_list,
- 			      ARRAY_SIZE(spl_boot_list))) {
- 		puts("SPL: failed to boot from all boot devices\n");
+ #ifdef CONFIG_CPU_V7M
+ 	spl_image.entry_point |= 0x1;
+ #endif
 Index: uboot-h5/Makefile
 ===================================================================
 --- uboot-h5.orig/Makefile
@@ -122,14 +178,14 @@ Index: uboot-h5/arch/arm/cpu/armv8/u-boot-spl.lds
  MEMORY { .sram : ORIGIN = CONFIG_SPL_TEXT_BASE,
  		LENGTH = CONFIG_SPL_MAX_SIZE }
  MEMORY { .sdram : ORIGIN = CONFIG_SPL_BSS_START_ADDR,
-@@ -39,6 +41,7 @@ SECTIONS
- 		*(.data*)
- 	} >.sram
- 
-+	CMD_LINE_SECTION(8)
- 	.u_boot_list : {
+@@ -43,6 +45,7 @@ SECTIONS
  		. = ALIGN(8);
  		KEEP(*(SORT(.u_boot_list*)));
+ 	} >.sram
++	CMD_LINE_SECTION(8)
+ 
+ 	.image_copy_end : {
+ 		. = ALIGN(8);
 Index: uboot-h5/arch/arm/mach-sunxi/Makefile
 ===================================================================
 --- uboot-h5.orig/arch/arm/mach-sunxi/Makefile
@@ -147,7 +203,167 @@ Index: uboot-h5/board/sunxi/board.c
 ===================================================================
 --- uboot-h5.orig/board/sunxi/board.c
 +++ uboot-h5/board/sunxi/board.c
-@@ -757,8 +757,10 @@ static void setup_environment(const void
+@@ -47,26 +47,26 @@ static int soft_i2c_board_init(void)
+ 
+ 	soft_i2c_gpio_sda = sunxi_name_to_gpio(CONFIG_VIDEO_LCD_PANEL_I2C_SDA);
+ 	if (soft_i2c_gpio_sda < 0) {
+-		printf("Error invalid soft i2c sda pin: '%s', err %d\n",
++		debug("Error invalid soft i2c sda pin: '%s', err %d\n",
+ 		       CONFIG_VIDEO_LCD_PANEL_I2C_SDA, soft_i2c_gpio_sda);
+ 		return soft_i2c_gpio_sda;
+ 	}
+ 	ret = gpio_request(soft_i2c_gpio_sda, "soft-i2c-sda");
+ 	if (ret) {
+-		printf("Error requesting soft i2c sda pin: '%s', err %d\n",
++		debug("Error requesting soft i2c sda pin: '%s', err %d\n",
+ 		       CONFIG_VIDEO_LCD_PANEL_I2C_SDA, ret);
+ 		return ret;
+ 	}
+ 
+ 	soft_i2c_gpio_scl = sunxi_name_to_gpio(CONFIG_VIDEO_LCD_PANEL_I2C_SCL);
+ 	if (soft_i2c_gpio_scl < 0) {
+-		printf("Error invalid soft i2c scl pin: '%s', err %d\n",
++		debug("Error invalid soft i2c scl pin: '%s', err %d\n",
+ 		       CONFIG_VIDEO_LCD_PANEL_I2C_SCL, soft_i2c_gpio_scl);
+ 		return soft_i2c_gpio_scl;
+ 	}
+ 	ret = gpio_request(soft_i2c_gpio_scl, "soft-i2c-scl");
+ 	if (ret) {
+-		printf("Error requesting soft i2c scl pin: '%s', err %d\n",
++		debug("Error requesting soft i2c scl pin: '%s', err %d\n",
+ 		       CONFIG_VIDEO_LCD_PANEL_I2C_SCL, ret);
+ 		return ret;
+ 	}
+@@ -200,7 +200,7 @@ int board_init(void)
+ 			debug("arch timer frequency is %d Hz, should be %d, fixing ...\n",
+ 			      freq, COUNTER_FREQUENCY);
+ #ifdef CONFIG_NON_SECURE
+-			printf("arch timer frequency is wrong, but cannot adjust it\n");
++			debug("arch timer frequency is wrong, but cannot adjust it\n");
+ #else
+ 			asm volatile("mcr p15, 0, %0, c14, c0, 0"
+ 				     : : "r"(COUNTER_FREQUENCY));
+@@ -246,7 +246,7 @@ int board_init(void)
+ 	int npi_boardtype = nanopi_get_board();
+ 	int i = 0;
+ 	if (nanopi_board[npi_boardtype][0] == '\0') {
+-		printf("fail to get boardtype\n");
++		debug("fail to get boardtype\n");
+ 		hang();
+ 	}
+ 	for(i=0; i<3; i++) {
+@@ -263,19 +263,19 @@ int board_init(void)
+ 				int busnum = 5;
+ 				ret = i2c_get_chip_for_busnum(busnum, SY8106A_I2C_ADDR, 1, &i2c_dev);
+ 				if (ret) {
+-					printf("%s: no bus %d\n", __func__, busnum);
++					debug("%s: no bus %d\n", __func__, busnum);
+ 				}
+ 				ret = dm_i2c_write(i2c_dev, SY8106A_VOUT1_SEL, &data, 1);
+ 				if (ret) {
+-					printf("%s: fail to i2c_write sy8106a", __func__);
++					debug("%s: fail to i2c_write sy8106a", __func__);
+ 				}
+ 				udelay(100);
+ 				data = 0;
+ 				ret = dm_i2c_read(i2c_dev, SY8106A_VOUT1_SEL, &data, 1);			
+ 				if (ret) {
+-					printf("%s: fail to i2c_read sy8106a", __func__);
++					debug("%s: fail to i2c_read sy8106a", __func__);
+ 				}
+-				printf("Sy8106a: %dmv\n", (data & ~(SY8106A_VOUT1_SEL_ENABLE)) * 10 + 680);
++				debug("Sy8106a: %dmv\n", (data & ~(SY8106A_VOUT1_SEL_ENABLE)) * 10 + 680);
+ 				if (data != SY8106A_VOUT1_1200MV) 
+ 					power_failed = 1;
+ 				else
+@@ -287,13 +287,13 @@ int board_init(void)
+ 				break;
+ 			}
+ 			else {
+-				printf("%s: fail to set CPUFreq %d\n", __func__, CONFIG_SYS_CLK_FREQ);
++				debug("%s: fail to set CPUFreq %d\n", __func__, CONFIG_SYS_CLK_FREQ);
+ 				if (i == 3)
+ 					hang();
+ 			}
+ 		}
+ 	}	
+-	printf("CPU Freq: %dMHz\n", clock_get_pll1()/1000000);
++	debug("CPU Freq: %dMHz\n", clock_get_pll1()/1000000);
+ #endif
+ #endif
+ 
+@@ -361,12 +361,14 @@ static void mmc_pinmux_setup(int sdc)
+ 	case 0:
+ 		/* SDC0: PF0-PF5 */
+ 		for (pin = SUNXI_GPF(0); pin <= SUNXI_GPF(5); pin++) {
++			printf("pin %d=%08x\n", pin, SUNXI_GPF_SDC0);
+ 			sunxi_gpio_set_cfgpin(pin, SUNXI_GPF_SDC0);
+ 			sunxi_gpio_set_pull(pin, SUNXI_GPIO_PULL_UP);
+ 			sunxi_gpio_set_drv(pin, 2);
+ 		}
+ 		break;
+ 
++#if 0
+ 	case 1:
+ 		pins = sunxi_name_to_gpio_bank(CONFIG_MMC1_PINS);
+ 
+@@ -533,9 +535,10 @@ static void mmc_pinmux_setup(int sdc)
+ 		}
+ #endif
+ 		break;
++#endif
+ 
+ 	default:
+-		printf("sunxi: invalid MMC slot %d for pinmux setup\n", sdc);
++		debug("sunxi: invalid MMC slot %d for pinmux setup\n", sdc);
+ 		break;
+ 	}
+ }
+@@ -566,6 +569,7 @@ int board_mmc_init(bd_t *bis)
+ 		 * not for the SPL, see spl_boot_device().
+ 		 */
+ 		if (readb(SPL_ADDR + 0x28) == SUNXI_BOOTED_FROM_MMC2) {
++			debug("Booting from emmc/mmc2\n");
+ 			/* Booting from emmc / mmc2, swap */
+ 			mmc0->block_dev.devnum = 1;
+ 			mmc1->block_dev.devnum = 0;
+@@ -639,9 +643,9 @@ void sunxi_board_init(void)
+ 	power_failed |= axp_set_sw(IS_ENABLED(CONFIG_AXP_SW_ON));
+ #endif
+ #endif
+-	printf("DRAM:");
++	debug("DRAM:");
+ 	gd->ram_size = sunxi_dram_init();
+-	printf(" %d MiB(%dMHz)\n", (int)(gd->ram_size >> 20), CONFIG_DRAM_CLK);
++	debug(" %d MiB(%dMHz)\n", (int)(gd->ram_size >> 20), CONFIG_DRAM_CLK);
+ 	if (!gd->ram_size)
+ 		hang();
+ 
+@@ -651,12 +655,12 @@ void sunxi_board_init(void)
+ 	 */
+ 	if (!power_failed)
+ #if defined(CONFIG_MACH_SUN8I_H3_NANOPI) || defined(CONFIG_MACH_SUN50I_H5_NANOPI)
+-		printf("CPU Freq: %dMHz\n", clock_get_pll1()/1000000);
++		debug("CPU Freq: %dMHz\n", clock_get_pll1()/1000000);
+ #else
+ 		clock_set_pll1(CONFIG_SYS_CLK_FREQ);
+ #endif
+ 	else
+-		printf("Failed to set core voltage! Can't set CPU frequency\n");
++		debug("Failed to set core voltage! Can't set CPU frequency\n");
+ }
+ #endif
+ 
+@@ -700,7 +704,7 @@ static void parse_spl_header(const uint3
+ 
+ 	uint8_t spl_header_version = spl->spl_signature[3];
+ 	if (spl_header_version != SPL_HEADER_VERSION) {
+-		printf("sunxi SPL version mismatch: expected %u, got %u\n",
++		debug("sunxi SPL version mismatch: expected %u, got %u\n",
+ 		       SPL_HEADER_VERSION, spl_header_version);
+ 		return;
+ 	}
+@@ -757,8 +761,10 @@ static void setup_environment(const void
  
  		for (i = 0; i < 4; i++) {
  			sprintf(ethaddr, "ethernet%d", i);
@@ -158,7 +374,17 @@ Index: uboot-h5/board/sunxi/board.c
  
  			if (i == 0)
  				strcpy(ethaddr, "ethaddr");
-@@ -825,10 +827,12 @@ int misc_init_r(void)
+@@ -776,7 +782,9 @@ static void setup_environment(const void
+ 			mac_addr[4] = (sid[3] >>  8) & 0xff;
+ 			mac_addr[5] = (sid[3] >>  0) & 0xff;
+ 
++#ifdef CONFIG_NET
+ 			eth_env_set_enetaddr(ethaddr, mac_addr);
++#endif
+ #if defined(CONFIG_MACH_SUN8I_H3_NANOPI) || defined(CONFIG_MACH_SUN50I_H5_NANOPI)
+ 			char mac_node[32];
+ 			sprintf(mac_node, "[%x %x %x %x %x %x]", \
+@@ -825,10 +833,12 @@ int misc_init_r(void)
  	setup_environment(gd->fdt_blob);
  
  #ifndef CONFIG_MACH_SUN9I
@@ -188,7 +414,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 ===================================================================
 --- uboot-h5.orig/configs/nanopi_h5_defconfig
 +++ uboot-h5/configs/nanopi_h5_defconfig
-@@ -1,32 +1,1030 @@
+@@ -1,32 +1,1014 @@
 +#
 +# Automatically generated file; DO NOT EDIT.
 +# U-Boot 2017.11 Configuration
@@ -337,7 +563,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_SPL_MMC_SUPPORT=y
 +CONFIG_SPL_SERIAL_SUPPORT=y
 +# CONFIG_SPL_DRIVERS_MISC_SUPPORT is not set
-+CONFIG_SPL_LIBDISK_SUPPORT=y
++# CONFIG_SPL_LIBDISK_SUPPORT is not set
 +# CONFIG_SPL_NAND_SUPPORT is not set
 +# CONFIG_SPL_SPI_FLASH_SUPPORT is not set
 +# CONFIG_SPL_SPI_SUPPORT is not set
@@ -371,7 +597,10 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_SUNXI_DRAM_LPDDR3_STOCK is not set
  CONFIG_DRAM_CLK=504
  CONFIG_DRAM_ZQ=3881977
- CONFIG_DRAM_ODT_EN=y
+-CONFIG_DRAM_ODT_EN=y
+-CONFIG_MMC_SUNXI_SLOT_EXTRA=2
+-CONFIG_R_I2C_ENABLE=y
++# CONFIG_DRAM_ODT_EN is not set
 +CONFIG_SYS_CLK_FREQ=1008000000
 +# CONFIG_UART0_PORT_F is not set
 +# CONFIG_OLD_SUNXI_KERNEL_COMPAT is not set
@@ -383,8 +612,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_MMC1_PINS=""
 +CONFIG_MMC2_PINS=""
 +CONFIG_MMC3_PINS=""
- CONFIG_MMC_SUNXI_SLOT_EXTRA=2
--CONFIG_R_I2C_ENABLE=y
++CONFIG_MMC_SUNXI_SLOT_EXTRA=-1
 +CONFIG_INITIAL_USB_SCAN_DELAY=0
 +CONFIG_USB0_VBUS_PIN=""
 +CONFIG_USB0_VBUS_DET=""
@@ -421,7 +649,6 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +#
  CONFIG_DEFAULT_DEVICE_TREE="sun50i-h5-nanopi-neo2"
 -# CONFIG_SYS_MALLOC_CLEAR_ON_INIT is not set
-+CONFIG_SMBIOS_PRODUCT_NAME="sunxi"
 +# CONFIG_DEBUG_UART is not set
 +# CONFIG_AHCI is not set
 +
@@ -456,7 +683,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_OF_SYSTEM_SETUP is not set
 +# CONFIG_OF_STDOUT_VIA_ALIAS is not set
 +CONFIG_SYS_EXTRA_OPTIONS=""
-+CONFIG_ARCH_FIXUP_FDT_MEMORY=y
++# CONFIG_ARCH_FIXUP_FDT_MEMORY is not set
 +
 +#
 +# API
@@ -485,6 +712,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_USE_BOOTARGS is not set
 +CONFIG_USE_BOOTCOMMAND=y
  CONFIG_BOOTCOMMAND="fatload mmc 0:1 ${scriptaddr} boot.scr; source ${scriptaddr}"
+-CONFIG_CONSOLE_MUX=y
 +
 +#
 +# Console
@@ -494,18 +722,16 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_LOGLEVEL=3
 +CONFIG_SPL_LOGLEVEL=3
 +# CONFIG_SILENT_CONSOLE is not set
-+CONFIG_PRE_CONSOLE_BUFFER=y
-+CONFIG_PRE_CON_BUF_SZ=1024
-+CONFIG_PRE_CON_BUF_ADDR=0x4f000000
- CONFIG_CONSOLE_MUX=y
++# CONFIG_PRE_CONSOLE_BUFFER is not set
++# CONFIG_CONSOLE_MUX is not set
 +CONFIG_SYS_CONSOLE_IS_IN_ENV=y
 +# CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE is not set
 +# CONFIG_SYS_CONSOLE_ENV_OVERWRITE is not set
 +# CONFIG_SYS_CONSOLE_INFO_QUIET is not set
-+CONFIG_SYS_STDIO_DEREGISTER=y
-+CONFIG_DEFAULT_FDT_FILE="sun50i-h5-nanopi-neo2"
++# CONFIG_SYS_STDIO_DEREGISTER is not set
++CONFIG_DEFAULT_FDT_FILE=""
 +# CONFIG_VERSION_VARIABLE is not set
-+CONFIG_DISPLAY_CPUINFO=y
++# CONFIG_DISPLAY_CPUINFO is not set
 +# CONFIG_DISPLAY_BOARDINFO is not set
 +
 +#
@@ -529,7 +755,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 -CONFIG_CMD_MEMTEST=y
 +# CONFIG_SPL_BOARD_INIT is not set
 +# CONFIG_SPL_BOOTROM_SUPPORT is not set
-+CONFIG_SPL_RAW_IMAGE_SUPPORT=y
++# CONFIG_SPL_RAW_IMAGE_SUPPORT is not set
 +# CONFIG_SPL_LEGACY_IMAGE_SUPPORT is not set
 +CONFIG_SPL_SYS_MALLOC_SIMPLE=y
 +# CONFIG_TPL_SYS_MALLOC_SIMPLE is not set
@@ -611,10 +837,6 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_CMD_BOOTM=y
 +# CONFIG_CMD_BOOTZ is not set
 +CONFIG_CMD_BOOTI=y
-+CONFIG_CMD_BOOTEFI=y
-+CONFIG_CMD_BOOTEFI_HELLO_COMPILE=y
-+# CONFIG_CMD_BOOTEFI_HELLO is not set
-+# CONFIG_CMD_BOOTEFI_SELFTEST is not set
 +# CONFIG_CMD_BOOTMENU is not set
 +# CONFIG_CMD_ELF is not set
 +CONFIG_CMD_FDT=y
@@ -632,12 +854,12 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# Environment commands
 +#
 +# CONFIG_CMD_ASKENV is not set
-+CONFIG_CMD_EXPORTENV=y
-+CONFIG_CMD_IMPORTENV=y
-+CONFIG_CMD_EDITENV=y
++# CONFIG_CMD_EXPORTENV is not set
++# CONFIG_CMD_IMPORTENV is not set
++# CONFIG_CMD_EDITENV is not set
 +# CONFIG_CMD_GREPENV is not set
-+CONFIG_CMD_SAVEENV=y
-+CONFIG_CMD_ENV_EXISTS=y
++# CONFIG_CMD_SAVEENV is not set
++# CONFIG_CMD_ENV_EXISTS is not set
 +# CONFIG_CMD_ENV_CALLBACK is not set
 +# CONFIG_CMD_ENV_FLAGS is not set
 +
@@ -669,7 +891,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_CMD_CLK is not set
 +# CONFIG_CMD_DEMO is not set
 +# CONFIG_CMD_DFU is not set
-+CONFIG_CMD_DM=y
++# CONFIG_CMD_DM is not set
 +# CONFIG_CMD_FDC is not set
  # CONFIG_CMD_FLASH is not set
  # CONFIG_CMD_FPGA is not set
@@ -716,7 +938,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +#
 +# Network commands
 +#
-+CONFIG_CMD_NET=y
++# CONFIG_CMD_NET is not set
 +# CONFIG_CMD_TFTPPUT is not set
 +# CONFIG_CMD_TFTPSRV is not set
 +# CONFIG_CMD_RARP is not set
@@ -794,9 +1016,9 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_PARTITIONS=y
 +# CONFIG_MAC_PARTITION is not set
 +# CONFIG_SPL_MAC_PARTITION is not set
-+CONFIG_DOS_PARTITION=y
++# CONFIG_DOS_PARTITION is not set
  # CONFIG_SPL_DOS_PARTITION is not set
-+CONFIG_ISO_PARTITION=y
++# CONFIG_ISO_PARTITION is not set
  # CONFIG_SPL_ISO_PARTITION is not set
 +# CONFIG_AMIGA_PARTITION is not set
 +# CONFIG_SPL_AMIGA_PARTITION is not set
@@ -848,12 +1070,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 -CONFIG_SYS_USB_EVENT_POLL_VIA_INT_QUEUE=y
 -CONFIG_OF_LIBFDT_OVERLAY=y
 +CONFIG_ENV_SIZE=0x20000
-+CONFIG_NET=y
-+# CONFIG_NET_RANDOM_ETHADDR is not set
-+# CONFIG_NETCONSOLE is not set
-+# CONFIG_NET_TFTP_VARS is not set
-+CONFIG_BOOTP_PXE_CLIENTARCH=0x16
-+CONFIG_BOOTP_VCI_STRING="U-Boot.armv8"
++# CONFIG_NET is not set
 +
 +#
 +# Device Drivers
@@ -868,11 +1085,11 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_DM_DEBUG is not set
 +# CONFIG_DM_DEVICE_REMOVE is not set
 +CONFIG_DM_STDIO=y
-+CONFIG_DM_SEQ_ALIAS=y
++# CONFIG_DM_SEQ_ALIAS is not set
 +# CONFIG_SPL_DM_SEQ_ALIAS is not set
 +# CONFIG_REGMAP is not set
 +# CONFIG_DEVRES is not set
-+CONFIG_SIMPLE_BUS=y
++# CONFIG_SIMPLE_BUS is not set
 +CONFIG_OF_TRANSLATE=y
 +CONFIG_DM_DEV_READ_INLINE=y
 +# CONFIG_ADC is not set
@@ -1029,7 +1246,6 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_MV88E6352_SWITCH is not set
 +# CONFIG_PHYLIB is not set
 +# CONFIG_DM_ETH is not set
-+# CONFIG_NETDEVICES is not set
 +# CONFIG_PCI is not set
 +
 +#
@@ -1086,7 +1302,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +CONFIG_SPL_SERIAL_PRESENT=y
 +CONFIG_DM_SERIAL=y
 +# CONFIG_SERIAL_RX_BUFFER is not set
-+CONFIG_SPL_DM_SERIAL=y
++# CONFIG_SPL_DM_SERIAL is not set
 +# CONFIG_TPL_DM_SERIAL is not set
 +# CONFIG_DEBUG_UART_SKIP_INIT is not set
 +# CONFIG_ALTERA_JTAG_UART is not set
@@ -1175,7 +1391,7 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +# CONFIG_FS_BTRFS is not set
 +# CONFIG_FS_CBFS is not set
 +CONFIG_FS_FAT=y
-+CONFIG_FAT_WRITE=y
++# CONFIG_FAT_WRITE is not set
 +CONFIG_FS_FAT_MAX_CLUSTSIZE=65536
 +# CONFIG_FS_JFFS2 is not set
 +# CONFIG_FS_CRAMFS is not set
@@ -1226,8 +1442,197 @@ Index: uboot-h5/configs/nanopi_h5_defconfig
 +#
 +# System tables
 +#
-+CONFIG_GENERATE_SMBIOS_TABLE=y
-+CONFIG_SMBIOS_MANUFACTURER=""
-+CONFIG_EFI_LOADER=y
-+# CONFIG_EFI_LOADER_BOUNCE_BUFFER is not set
++# CONFIG_EFI_LOADER is not set
 +# CONFIG_UNIT_TEST is not set
+Index: uboot-h5/common/Makefile
+===================================================================
+--- uboot-h5.orig/common/Makefile
++++ uboot-h5/common/Makefile
+@@ -129,4 +129,6 @@ obj-$(CONFIG_FSL_DDR_INTERACTIVE) += cli
+ obj-$(CONFIG_CMD_DFU) += dfu.o
+ obj-y += command.o
+ obj-y += s_record.o
++ifdef CONFIG_YMODEM_SUPPORT
+ obj-y += xyzModem.o
++endif
+Index: uboot-h5/arch/arm/mach-sunxi/board.c
+===================================================================
+--- uboot-h5.orig/arch/arm/mach-sunxi/board.c
++++ uboot-h5/arch/arm/mach-sunxi/board.c
+@@ -290,7 +290,7 @@ ulong mem_test_quick(vu_long *buf, ulong
+ 	length = (end_addr - start_addr) / sizeof(ulong);
+ 	end = buf + length;
+ 	pattern=0x55aa;
+-	printf("Pattern %lx  Writing...", pattern);
++	debug("Pattern %lx  Writing...", pattern);
+ 
+ 	for (addr = buf, val = pattern; addr < end; addr++) {
+ 		*addr = val;
+@@ -304,7 +304,7 @@ ulong mem_test_quick(vu_long *buf, ulong
+ 		if (readback != val) {
+ 			ulong offset = addr - buf;
+ 
+-			printf("\nMem error @ 0x%x(%lx+4*%ld): "
++			debug("\nMem error @ 0x%x(%lx+4*%ld): "
+ 				"found 0x%lx, expected 0x%lx(0x55aa+%ld)\n",
+ 				(uint)(uintptr_t)(start_addr + offset*sizeof(vu_long)), start_addr, offset,
+ 				readback, val, offset);
+@@ -313,7 +313,7 @@ ulong mem_test_quick(vu_long *buf, ulong
+ 		}
+ 		val += incr;
+ 	}
+-	printf("OK\n");
++	debug("OK\n");
+ 
+ 	return errs;
+ 
+@@ -328,7 +328,7 @@ void spl_mem_test(void)
+ 	int iteration;
+ 
+ 	for (iteration = 0; iteration < SPL_MEM_TEST_ITERATION; iteration++) {
+-		printf("memory test: %d\n", iteration + 1);
++		debug("memory test: %d\n", iteration + 1);
+ 		mem_test_quick(buf, start, end, SPL_MEM_TEST_PATTERN, iteration);
+ 	}
+ }
+@@ -346,8 +346,10 @@ void board_init_f(ulong dummy)
+ 	sunxi_board_init();
+ 
+ #ifdef CONFIG_SPL_BUILD
++#if 0
+     spl_mem_test();
+ #endif
++#endif
+ }
+ #endif
+ 
+Index: uboot-h5/arch/arm/mach-sunxi/Kconfig
+===================================================================
+--- uboot-h5.orig/arch/arm/mach-sunxi/Kconfig
++++ uboot-h5/arch/arm/mach-sunxi/Kconfig
+@@ -177,16 +177,12 @@ config MACH_SUN50I
+ 	select SUPPORT_SPL
+ 	select SUNXI_DRAM_DW
+ 	select SUNXI_DRAM_DW_32BIT
+-	select FIT
+-	select SPL_LOAD_FIT
+ 
+ config MACH_SUN50I_H5
+ 	bool "sun50i (Allwinner H5)"
+ 	select ARM64
+ 	select MACH_SUNXI_H3_H5
+ 	select SUNXI_HIGH_SRAM
+-	select FIT
+-	select SPL_LOAD_FIT
+ 
+ endchoice
+ 
+Index: uboot-h5/common/spl/spl_mmc.c
+===================================================================
+--- uboot-h5.orig/common/spl/spl_mmc.c
++++ uboot-h5/common/spl/spl_mmc.c
+@@ -203,7 +203,7 @@ static int mmc_load_image_raw_os(struct
+ 		(void *) CONFIG_SYS_SPL_ARGS_ADDR);
+ 	if (count != CONFIG_SYS_MMCSD_RAW_MODE_ARGS_SECTORS) {
+ #ifdef CONFIG_SPL_LIBCOMMON_SUPPORT
+-		puts("mmc_load_image_raw_os: mmc block read error\n");
++		debug("mmc_load_image_raw_os: mmc block read error\n");
+ #endif
+ 		return -1;
+ 	}
+@@ -214,7 +214,7 @@ static int mmc_load_image_raw_os(struct
+ 		return ret;
+ 
+ 	if (spl_image->os != IH_OS_LINUX) {
+-		puts("Expected Linux image is not found. Trying to start U-boot\n");
++		debug("Expected Linux image is not found. Trying to start U-boot\n");
+ 		return -ENOENT;
+ 	}
+ 
+@@ -358,7 +358,7 @@ int spl_mmc_load_image(struct spl_image_
+ 		break;
+ #ifdef CONFIG_SPL_LIBCOMMON_SUPPORT
+ 	default:
+-		puts("spl: mmc: wrong boot mode\n");
++		debug("spl: mmc: wrong boot mode\n");
+ #endif
+ 	}
+ 
+@@ -366,5 +366,7 @@ int spl_mmc_load_image(struct spl_image_
+ }
+ 
+ SPL_LOAD_IMAGE_METHOD("MMC1", 0, BOOT_DEVICE_MMC1, spl_mmc_load_image);
++#if 0
+ SPL_LOAD_IMAGE_METHOD("MMC2", 0, BOOT_DEVICE_MMC2, spl_mmc_load_image);
+ SPL_LOAD_IMAGE_METHOD("MMC2_2", 0, BOOT_DEVICE_MMC2_2, spl_mmc_load_image);
++#endif
+Index: uboot-h5/drivers/mmc/sunxi_mmc.c
+===================================================================
+--- uboot-h5.orig/drivers/mmc/sunxi_mmc.c
++++ uboot-h5/drivers/mmc/sunxi_mmc.c
+@@ -75,7 +75,7 @@ static int mmc_resource_init(int sdc_no)
+ 		priv->mclkreg = &ccm->sd3_clk_cfg;
+ 		break;
+ 	default:
+-		printf("Wrong mmc number %d\n", sdc_no);
++		debug("Wrong mmc number %d\n", sdc_no);
+ 		return -1;
+ 	}
+ 	priv->mmc_no = sdc_no;
+@@ -133,7 +133,7 @@ static int mmc_set_mod_clk(struct sunxi_
+ 	}
+ 
+ 	if (n > 3) {
+-		printf("mmc %u error cannot set clock to %u\n", priv->mmc_no,
++		debug("mmc %u error cannot set clock to %u\n", priv->mmc_no,
+ 		       hz);
+ 		return -1;
+ 	}
+@@ -177,7 +177,7 @@ static int mmc_set_mod_clk(struct sunxi_
+ 	writel(CCM_MMC_CTRL_ENABLE| pll | CCM_MMC_CTRL_N(n) |
+ 	       CCM_MMC_CTRL_M(div) | val, priv->mclkreg);
+ 
+-	debug("mmc %u set mod-clk req %u parent %u n %u m %u rate %u\n",
++	printf("mmc %u set mod-clk req %u parent %u n %u m %u rate %u\n",
+ 	      priv->mmc_no, hz, pll_hz, 1u << n, div, pll_hz / (1u << n) / div);
+ 
+ 	return 0;
+@@ -359,7 +359,7 @@ static int sunxi_mmc_send_cmd_common(str
+ 		writel(data->blocks * data->blocksize, &priv->reg->bytecnt);
+ 	}
+ 
+-	debug("mmc %d, cmd %d(0x%08x), arg 0x%08x\n", priv->mmc_no,
++	printf("mmc %d, cmd %d(0x%08x), arg 0x%08x\n", priv->mmc_no,
+ 	      cmd->cmdidx, cmdval | cmd->cmdidx, cmd->cmdarg);
+ 	writel(cmd->cmdarg, &priv->reg->arg);
+ 
+@@ -421,12 +421,12 @@ static int sunxi_mmc_send_cmd_common(str
+ 		cmd->response[1] = readl(&priv->reg->resp2);
+ 		cmd->response[2] = readl(&priv->reg->resp1);
+ 		cmd->response[3] = readl(&priv->reg->resp0);
+-		debug("mmc resp 0x%08x 0x%08x 0x%08x 0x%08x\n",
++		printf("mmc resp 0x%08x 0x%08x 0x%08x 0x%08x\n",
+ 		      cmd->response[3], cmd->response[2],
+ 		      cmd->response[1], cmd->response[0]);
+ 	} else {
+ 		cmd->response[0] = readl(&priv->reg->resp0);
+-		debug("mmc resp 0x%08x\n", cmd->response[0]);
++		printf("mmc resp 0x%08x\n", cmd->response[0]);
+ 	}
+ out:
+ 	if (error < 0) {
+Index: uboot-h5/include/configs/sunxi-common.h
+===================================================================
+--- uboot-h5.orig/include/configs/sunxi-common.h
++++ uboot-h5/include/configs/sunxi-common.h
+@@ -16,6 +16,10 @@
+ #include <asm/arch/cpu.h>
+ #include <linux/stringify.h>
+ 
++#ifndef CONFIG_DEFAULT_DEVICE_TREE
++#define CONFIG_DEFAULT_DEVICE_TREE	"sun50i-h5-nanopi-neo2"
++#endif
++
+ #ifdef CONFIG_OLD_SUNXI_KERNEL_COMPAT
+ /*
+  * The U-Boot workarounds bugs in the outdated buggy sunxi-3.4 kernels at the

@@ -71,5 +71,6 @@ if [ $? -ne 0 ]; then
 	echo "Error: filesystem fusing failed, Stop."
 	exit 1
 fi
+sync
 echo "${TARGET_OS^} is fused successfully."
 echo "All done."
