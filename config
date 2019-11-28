@@ -1,0 +1,92 @@
+ARCH=arm64
+CROSS_COMPILE=aarch64-linux-
+SOC=h5
+
+UCFG=nanopi_h5_defconfig
+UBOOT_REPO=https://github.com/friendlyarm/u-boot
+TARGET_OS=friendlycore-xenial_4.14_arm64
+TARGET_ROM=${TARGET_OS}.tgz
+UBOOT_BRANCH=sunxi-v2017.x
+UBOOT_DIR=~/workspace/friendlyarm/uboot-${SOC}
+PARTMAP=${TARGET_OS}/partmap.txt
+BASE_URL=http://112.124.9.243/dvdfiles
+OPT_URL=http://wiki.friendlyarm.com/download
+BOARD=H5/images-for-eflasher
+ROMFILE=${SCRIPT}/${TARGET_ROM}
+UBOOT_SPL=${UBOOT_DIR}/spl/sunxi-spl.bin
+UBOOT_ITB=${UBOOT_DIR}/u-boot.itb
+REBUILD=1
+JOBS=1
+
+function build_uboot()
+{
+	if [ ! -d ${UBOOT_DIR} ]; then
+		git clone ${UBOOT_REPO} \
+			--depth 1 -b ${UBOOT_BRANCH} ${UBOOT_DIR}
+	fi
+
+	if [ "x${REBUILD}" != "x" -o ! -f ${UBOOT_SPL} ]; then
+		(
+			cd ${UBOOT_DIR}
+			make clean
+			make ${UCFG} CROSS_COMPILE=${CROSS_COMPILE}
+			make V=1 CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}
+			if [ $? -ne 0 ]; then
+				echo "failed to build uboot."
+				exit 1
+			fi
+			echo "building uboot ok."
+		)
+		REBUILD=1
+	fi
+}
+
+function download_file()
+{
+	local url=${BASE_URL}/${BOARD}/$1
+
+	wget --spider --tries=1 ${url}
+	if [[ "$?" != 0 ]]; then
+		url=${OPT_URL}/${BOARD}/$1
+	fi
+	wget ${url}
+	if [[ "$?" != 0 ]]; then
+		echo "Error downloading file: $1"
+		exit 1
+	fi
+	return 0
+}
+
+function prepare_rom()
+{
+	if [ ! -f ${PARTMAP} ]; then
+		if [ ! -f ${ROMFILE} ]; then
+			download_file ${TARGET_ROM}
+		fi
+		download_file ${TARGET_ROM}.hash.md5
+		(
+			cd ${SCRIPT};
+			md5sum -c ${TARGET_ROM}.hash.md5
+			if [[ "$?" != 0 ]]; then
+				echo "Error in downloading ${ROMFILE}."
+				exit 1
+			fi
+			echo "downloading ${ROMFILE} ok."
+			rm -f ${TARGET_ROM}.hash.md5
+		)
+		mkdir -p ${TARGET_OS}
+		XOPTS="-C ${TARGET_OS} --strip-components=1"
+		tar xzvf ${ROMFILE} ${XOPTS} || exit 1
+	fi
+}
+
+# Fusing 2ndboot, bootloader to card
+function fusing_bin()
+{
+	[ -z $2 -o ! -f $1 ] && return 1
+
+	echo "---------------------------------"
+	echo "$1 fusing"
+	echo "dd if=$1 of=/dev/${DEV_NAME} bs=512 seek=$2"
+	dd if=$1 of=/dev/${DEV_NAME} bs=512 seek=$2 conv=fdatasync
+}

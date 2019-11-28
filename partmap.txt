@@ -1,0 +1,7 @@
+# sd0 partition map
+# flash= <device>.<dev no>:<partition>:<fstype>:<start>,<length>
+#   support device : eeprom, nand, mmc
+#   support fstype : 2nd, boot, raw, fat, ext4, ubi
+#
+# CPU=h5
+flash=mmc,0:boot0:raw:0x2000,0x8000:sunxi-spl.bin;
